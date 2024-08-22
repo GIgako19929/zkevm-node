@@ -214,7 +214,7 @@ func main() {
 
 func initializeStreamServer(c *config.Config) (*datastreamer.StreamServer, error) {
 	// Create a stream server
-	streamServer, err := datastreamer.NewServer(c.Offline.Port, c.Offline.Version, c.Offline.ChainID, state.StreamTypeSequencer, c.Offline.Filename, c.Offline.WriteTimeout.Duration, &c.Log)
+	streamServer, err := datastreamer.NewServer(c.Offline.Port, c.Offline.Version, c.Offline.ChainID, state.StreamTypeSequencer, c.Offline.Filename, c.Offline.WriteTimeout.Duration, c.Offline.InactivityTimeout.Duration, c.Offline.InactivityCheckInterval.Duration, &c.Log)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func generate(cliCtx *cli.Context) error {
 		}
 	}
 
-	err = state.GenerateDataStreamFile(cliCtx.Context, streamServer, stateDB, false, &imStateRoots, c.Offline.ChainID, c.Offline.UpgradeEtrogBatchNumber)
+	err = state.GenerateDataStreamFile(cliCtx.Context, streamServer, stateDB, false, &imStateRoots, c.Offline.ChainID, c.Offline.UpgradeEtrogBatchNumber, c.Offline.Version)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -483,6 +483,15 @@ func decodeL2Block(cliCtx *cli.Context) error {
 		i++
 	}
 
+	if c.Offline.Version >= state.DSVersion4 {
+		l2BlockEnd, err := client.ExecCommandGetEntry(secondEntry.Number)
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
+		printEntry(l2BlockEnd)
+	}
+
 	return nil
 }
 
@@ -562,6 +571,15 @@ func decodeL2BlockOffline(cliCtx *cli.Context) error {
 			os.Exit(1)
 		}
 		i++
+	}
+
+	if c.Offline.Version >= state.DSVersion4 {
+		l2BlockEnd, err := streamServer.GetEntry(secondEntry.Number)
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
+		printEntry(l2BlockEnd)
 	}
 
 	return nil
@@ -955,6 +973,21 @@ func printEntry(entry datastreamer.FileEntry) {
 			printColored(color.FgGreen, "Debug...........: ")
 			printColored(color.FgHiWhite, fmt.Sprintf("%s\n", l2Block.Debug))
 		}
+
+	case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_L2_BLOCK_END):
+		l2BlockEnd := &datastream.L2BlockEnd{}
+		err := proto.Unmarshal(entry.Data, l2BlockEnd)
+		if err != nil {
+			log.Error(err)
+			os.Exit(1)
+		}
+
+		printColored(color.FgGreen, "Entry Type......: ")
+		printColored(color.FgHiYellow, "L2 Block End\n")
+		printColored(color.FgGreen, "Entry Number....: ")
+		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", entry.Number))
+		printColored(color.FgGreen, "L2 Block Number.: ")
+		printColored(color.FgHiWhite, fmt.Sprintf("%d\n", l2BlockEnd.Number))
 
 	case datastreamer.EntryType(datastream.EntryType_ENTRY_TYPE_BATCH_START):
 		batch := &datastream.BatchStart{}
